@@ -1,0 +1,8 @@
+prefix=/home/fydp/catkin_ws/devel
+
+Name: swole_7
+Description: Description of swole_7
+Version: 1.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 
