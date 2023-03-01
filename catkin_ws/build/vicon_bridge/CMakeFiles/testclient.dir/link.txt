@@ -1,1 +1,0 @@
-/usr/bin/c++    -rdynamic CMakeFiles/testclient.dir/src/ViconDataStreamSDK_CPPTest.cpp.o  -o /home/fydp/catkin_ws/devel/lib/vicon_bridge/testclient -Wl,-rpath,/home/fydp/catkin_ws/devel/lib: /home/fydp/catkin_ws/devel/lib/libvicon_sdk.so -lboost_thread -lboost_date_time -lboost_chrono -lboost_system -lboost_atomic -lpthread 

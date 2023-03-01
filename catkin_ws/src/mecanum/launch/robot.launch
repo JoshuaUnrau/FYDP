@@ -1,7 +1,0 @@
-<launch>
-    <node name="lifter_test" pkg="mecanum" type="lifter_pub.py" />
-    <node name="pwm" pkg="pwm" type="pwm.py" />
-    <node name="servo_test" pkg="mecanum" type="servo_pub.py"/>
-      <node name="mecanum" pkg="mecanum" type="mecanum.py" />
-    <node name="motors_test" pkg="mecanum" type="motors_test.py" />
-</launch>

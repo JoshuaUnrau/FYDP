@@ -1,8 +1,0 @@
-prefix=/home/fydp/catkin_ws/install
-
-Name: pwm
-Description: Description of pwm
-Version: 0.0.0
-Cflags: 
-Libs: -L${prefix}/lib 
-Requires: 

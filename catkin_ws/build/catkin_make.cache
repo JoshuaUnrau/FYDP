@@ -1,2 +1,0 @@
-mecanum:pwm:swole_7:vicon_bridge
--DCATKIN_DEVEL_PREFIX=/home/fydp/catkin_ws/devel -DCMAKE_INSTALL_PREFIX=/home/fydp/catkin_ws/install -G Unix Makefiles

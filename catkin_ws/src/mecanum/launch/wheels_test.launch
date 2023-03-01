@@ -1,4 +1,0 @@
-<launch>
-    <node name="mecanum" pkg="mecanum" type="mecanum.py" />
-    <node name="motors_test" pkg="mecanum" type="motors_test.py" />
-</launch>

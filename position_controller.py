@@ -1,13 +1,17 @@
 #!/usr/bin/env python
 
+#TODO:
+#1. Get desired angles relative to table for gripping positions
+#2.
+
 import rospy
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Int32
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Pose, TransformStamped
 from math import pow, atan2, sqrt
 from enum import IntEnum
+import math
 from timeit import default_timer as timer
-
 
 def euler_from_quaternion(x, y, z, w):
     """
@@ -47,57 +51,31 @@ class Position_Controller:
     def __init__(self):
         # Creates a node with name 'Position_Controller_controller' and make sure it is a
         # unique node (using anonymous=True).
+        print("Initialising")
         rospy.init_node('controller')
-
-        # Publisher which will publish to the topic '/turtle1/cmd_vel'.
-        self.velocity_publisher = rospy.Publisher('cmd_vel', Twist, queue_size=10)
-        self.lifter_publisher = rospy.Publisher('lifter_state', int, queue_size=10)
-        self.servo_publisher = rospy.Publisher('servo', int, queue_size=10)
-
-        self.goal_subscriber = rospy.Subscriber('vicon/test_table_leg_1/test_table_leg_1', TransformStamped,
-                                                self.set_goal)
-        # test topic for testing leg positions
-        self.pose_subscriber = rospy.Subscriber('/vicon/test/test', TransformStamped, self.update_pose)
-
-        # subscribers for table leg positions
-        self.table_leg_1_subscriber = rospy.Subscriber('vicon/test_table_leg_1/test_table_leg_1', TransformStamped,
-                                                       self.set_table_leg_1_pose)
-        self.table_leg_2_subscriber = rospy.Subscriber('vicon/test_table_leg_2/test_table_leg_2', TransformStamped,
-                                                       self.set_table_leg_2_pose)
-
-        self.loadcell_neg_x_subscriber = rospy.Subscriber('loadcell_neg_x', Int32, self.update_load_cell_neg_x_state())
-        self.loadcell_pos_x_subscriber = rospy.Subscriber('loadcell_pos_x', Int32, self.update_load_cell_pos_x_state())
-        self.loadcell_y_subscriber = rospy.Subscriber('loadcell_y', Int32, self.update_load_cell_y_state())
-
-        self.linear_actuator_subscriber = rospy.Subscriber('current_lifter_state', Int32,
-                                                           self.update_linear_actuator_state())
-        self.servo_subscriber = rospy.Subscriber('current_lifter_state', Int32, self.update_pose)
 
         # position of the robot
         # self.pose_subscriber = rospy.Subscriber('/vicon/swole_1/swole_1', TransformStamped, self.update_pose)
 
-        self.pose = TransformStamped()
-        self.goal = TransformStamped()
-        self.table_leg_1_pose = TransformStamped()
-        self.table_leg_2_pose = TransformStamped()
-        # leg 3 adjacent to leg 1
-        self.table_leg_3_pose = TransformStamped()
-        # leg 4 adjacent to leg 2
-        self.table_leg_4_pose = TransformStamped()
+        self.pose = Twist()
+        self.goal = Twist()
+
+        # center point of table
+        self.table_pose = Twist()
 
         # Constants
-
         # table width of small table
         # 35 mm
         self.TABLE_WIDTH = 0.35
         # for larger table
-        # self.table_width = 0.55
+        # self.TABLE_WIDTH = 0.55
         # assume safe distance from table is around 50 mm
         self.SAFE_GRIPPING_DIST = 0.5
+        self.TABLE_POSE_SET = False
 
         # servo
-        self.SERVO_CLOSED = 80
-        self.SERVO_OPEN = 0
+        self.SERVO_CLOSED = 20
+        self.SERVO_OPEN = 65
         self.TABLE_GRABBING_FORCE = 1000
         self.SERVO_TOLERANCE = 5
         self.GRABBING_TIMEOUT = 5
@@ -118,57 +96,71 @@ class Position_Controller:
         self.load_cell_y = 0
         self.closest_table_leg = 0
         self.leaderFollowerState = LeaderFollowerState.Unknown
-        self.actuator_state = ActuatorState.Unknown
-        self.servo_state = 0
+        self.actuator_state = ActuatorState.Stop
+        self.servo_state = 25
         self.grabbing_timer_started = False
 
-        print("Goal reset", self.goal)
+        # Publisher which will publish to the topic '/turtle1/cmd_vel'.
+        self.velocity_publisher = rospy.Publisher('cmd_vel', Twist, queue_size=10)
+        self.lifter_publisher = rospy.Publisher('desired_lifter_state', Int32, queue_size=10)
+        self.servo_publisher = rospy.Publisher('servo', Int32, queue_size=10)
+
+        # test topic for testing leg positions
+        self.pose_subscriber = rospy.Subscriber('/vicon/swole_1/swole_1', TransformStamped, self.update_pose)
+
+        # subscribers for table leg positions
+        self.table_pose_subscriber = rospy.Subscriber('vicon/small_table/small_table', TransformStamped,
+                                                       self.set_table_pose)
+
+        self.loadcell_neg_x_subscriber = rospy.Subscriber('loadcell_neg_x', Int32, self.update_load_cell_neg_x_state)
+        self.loadcell_pos_x_subscriber = rospy.Subscriber('loadcell_pos_x', Int32, self.update_load_cell_pos_x_state)
+        self.loadcell_y_subscriber = rospy.Subscriber('loadcell_y', Int32, self.update_load_cell_y_state)
+
+        self.linear_actuator_subscriber = rospy.Subscriber('current_lifter_state', Int32,
+                                                           self.update_linear_actuator_state)
+        self.servo_subscriber = rospy.Subscriber('current_servo_state', Int32, self.update_servo_state)
+
+        print("Waiting for table pose.")
+        while(not self.TABLE_POSE_SET):
+            pass
+        print("Table pose set.")
         self.manageState()
 
-    def set_grabbing_position(self):
-        leg_positions = [self.table_leg_1_pose, self.table_leg_2_pose, self.table_leg_3_pose, self.table_leg_4_pose]
+    #     table leg angle testing
+    #     self.angle_testing()
+    def wrapped_angle(self, current_angle, desired_angle):
+        """
+        This function calculates the angle that the robot should turn
+        to get from the current angle to the desired angle, taking into
+        account the wrapping issue.
 
-        for position in leg_positions:
-            # there are 2 safe grabbing positions for each leg
-            # mimus, minus offset and minus, plus offset
+        Arguments:
+        current_angle -- the current angle of the robot, in radians
+        desired_angle -- the desired angle of the robot, in radians
 
-            position_1 = position
-            position_2 = position
-            position_1.transform.translation.x -= self.SAFE_GRIPPING_DIST
-            position_1.transform.translation.y -= self.SAFE_GRIPPING_DIST
-            position_2.transform.translation.x += self.SAFE_GRIPPING_DIST
-            position_2.transform.translation.y -= self.SAFE_GRIPPING_DIST
+        Returns:
+        The angle that the robot should turn, in radians.
+        """
+        # Calculate the angle difference between the desired and current angles
+        #Adding the 2 * math.pi removes the posibility of negatives
+        # modding by 2 * math.pi restricts to 0, 2pi range
+        angle_diff = (desired_angle - current_angle + 2 * math.pi) % (2 * math.pi)
 
-            self.table_grab_positions.append(position_1)
-            self.table_grab_positions.append(position_2)
+        # Adjust the angle difference to be between -pi and pi
+        if angle_diff > math.pi:
+            angle_diff -= 2 * math.pi
+        elif angle_diff < -math.pi:
+            angle_diff += 2 * math.pi
 
-    def find_and_set_other_leg_coords(self):
-        x1 = self.table_leg_1_pose.transform.translation.x
-        y1 = self.table_leg_1_pose.transform.translation.y
+        # Return the adjusted angle difference
+        return angle_diff
 
-        x2 = self.table_leg_2_pose.transform.translation.x
-        y2 = self.table_leg_2_pose.transform.translation.y
-        # calculate the length of the diagonal
-        diag_length = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-        # calculate the angle of the diagonal
-        diag_angle = math.atan2(y2 - y1, x2 - x1)
-        # calculate the half diagonal length (i.e. from the center to a corner)
-        half_diag_length = diag_length / 2.0
-        # calculate the coordinates of the center of the square
-        center_x = (x1 + x2) / 2.0
-        center_y = (y1 + y2) / 2.0
-        # calculate the coordinates of the other two corners
-        corner1_x = center_x + half_diag_length * math.cos(diag_angle + math.pi / 2.0)
-        corner1_y = center_y + half_diag_length * math.sin(diag_angle + math.pi / 2.0)
-        corner2_x = center_x + half_diag_length * math.cos(diag_angle - math.pi / 2.0)
-        corner2_y = center_y + half_diag_length * math.sin(diag_angle - math.pi / 2.0)
-
-        # set positions of other 2 legs
-        self.table_leg_3_pose.transform.translation.x = corner1_x
-        self.table_leg_3_pose.transform.translation.y = corner1_y
-
-        self.table_leg_4_pose.transform.translation.x = corner2_x
-        self.table_leg_4_pose.transform.translation.y = corner2_y
+    def angle_testing(self):
+        rate = rospy.Rate(10)  # 10hz
+        # while not rospy.is_shutdown():
+        print("Angle testing")
+        print("Robot position", self.pose)
+        rate.sleep()
 
     def update_linear_actuator_state(self, data):
         self.actuator_state = data.data
@@ -185,28 +177,125 @@ class Position_Controller:
     def update_load_cell_y_state(self, data):
         self.load_cell_y = data.data
 
-    def set_table_leg_1_pose(self, data):
+    def transform_rotated_point(self, x, y, angle, point_is_x):
+        if point_is_x:
+            return x * math.cos(angle) - y * math.sin(angle)
+        else:
+            return x * math.sin(angle) + y * math.cos(angle)
+
+    def set_table_pose(self, data):
         # print("Table leg 1 pose", data)
-        self.table_leg_1_pose = data
+        # self.table_pose = data
 
-        # update other leg coordinates and set grabbing positions
-        self.find_and_set_other_leg_coords()
-        self.set_grabbing_position()
+        self.table_pose.linear.x = data.transform.translation.x
+        self.table_pose.linear.y = data.transform.translation.y
+        _, _, self.table_pose.angular.z, = euler_from_quaternion(data.transform.rotation.x,
+                                                                 data.transform.rotation.y,
+                                                                 data.transform.rotation.z,
+                                                                 data.transform.rotation.w)
+        # leg_positions = [self.table_leg_1_pose, self.table_leg_2_pose, self.table_leg_3_pose, self.table_leg_4_pose]
 
-    def set_table_leg_2_pose(self, data):
-        print("Table leg 2 pose", data)
-        self.table_leg_2_pose = data
+        # for position in leg_positions:
+        #     # there are 2 safe grabbing positions for each leg
+        #     # mimus, minus offset and minus, plus offset
+        angle = self.table_pose.angular.z
+        position_1 = Twist()
+        position_1.linear.x = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           True) + self.TABLE_WIDTH / 2
+        position_1.linear.y = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                         False) + self.SAFE_GRIPPING_DIST
 
-    def set_goal(self, data):
-        self.goal = data
+        position_1.angular.z = math.radians(270.0)
+
+        position_2 = Twist()
+        position_2.linear.x = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           True) + self.TABLE_WIDTH / 2
+        position_2.linear.y = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           False) - self.SAFE_GRIPPING_DIST
+        position_2.angular.z = math.radians(90.0)
+
+        position_3 = Twist()
+        position_3.linear.x = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           True) - self.TABLE_WIDTH / 2
+        position_3.linear.y = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           False) + self.SAFE_GRIPPING_DIST
+        position_3.angular.z = math.radians(270.0)
+
+        position_4 = Twist()
+        position_4.linear.x = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           True) - self.TABLE_WIDTH / 2
+        position_4.linear.y = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           False) - self.SAFE_GRIPPING_DIST
+        position_4.angular.z = math.radians(90.0)
+
+        position_5 = Twist()
+        position_5.linear.x = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           True) + self.SAFE_GRIPPING_DIST
+        position_5.linear.y = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           False) + self.TABLE_WIDTH / 2
+        position_5.angular.z = math.radians(180.0)
+
+        position_6 = Twist()
+        position_6.linear.x = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           True) + self.SAFE_GRIPPING_DIST
+        position_6.linear.y = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           False) - self.TABLE_WIDTH / 2
+        position_6.angular.z = math.radians(180.0)
+
+        position_7 = Twist()
+        position_7.linear.x = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           True) - self.SAFE_GRIPPING_DIST
+        position_7.linear.y = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           False) + self.TABLE_WIDTH / 2
+        position_7.angular.z = math.radians(0.0)
+
+        position_8 = Twist()
+        position_8.linear.x = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           True) - self.SAFE_GRIPPING_DIST
+        position_8.linear.y = self.transform_rotated_point(self.pose.linear.x,
+                                                           self.pose.linear.y, angle,
+                                                           False) - self.TABLE_WIDTH / 2
+        position_8.angular.z = math.radians(0.0)
+
+        #     set all in table positions array
+        self.table_grab_positions = [position_1, position_2, position_3,
+                                     position_4, position_5, position_6,
+                                     position_7, position_8]
+
+        #Modify grab positions by table pose
+        i = 0
+        for twist in self.table_grab_positions:
+            self.table_grab_positions[i].angular.z = twist.angular.z + self.table_pose.angular.z
+            i += 1
+
+        self.TABLE_POSE_SET = True
 
     def update_pose(self, data):
-        self.pose = data
+        self.pose.linear.x = data.transform.translation.x
+        self.pose.linear.y = data.transform.translation.y
+        _, _, self.pose.angular.z = euler_from_quaternion(data.transform.rotation.x,
+                                                          data.transform.rotation.y,
+                                                          data.transform.rotation.z,
+                                                          data.transform.rotation.w)
 
     def euclidean_distance(self, pose1, pose2):
-        return sqrt(pow((pose1.transform.translation.x - pose2.transform.translation.x), 2) +
-                    pow((pose1.transform.translation.y - pose2.transform.translation.y), 2))
-
+        return sqrt(pow((pose1.linear.x - pose2.linear.x), 2) +
+                        pow((pose1.linear.y - pose2.linear.y), 2))
     def euclidean_distance_xy(self, x, y):
         return sqrt(pow((x), 2) +
                     pow((y), 2))
@@ -219,21 +308,25 @@ class Position_Controller:
     # This selects the closest grabbing position
     def get_closest_table_leg(self):
         # Array of 8 grabbing positions (2 per leg).
-        min = 0
+        min = 9999
         index = 0
-        for position, i in self.table_grab_positions:
+        i = 0
+        #Positions are twists not poses
+        for position in self.table_grab_positions:
             distance_to_position = self.euclidean_distance(position, self.pose)
+            #print(distance_to_position)
             if min > distance_to_position:
                 min = distance_to_position
                 index = i
-
+            i += 1
+        print(index)
         return index
 
-    def get_closest_table_pose(self, leg_index):
+    def get_table_pose(self, leg_index):
         return self.table_grab_positions[leg_index]
 
-    def setMinimumSpeed(self, vel_msg, mimumum_speed):
-        if (self.euclidean_distance_xy(vel_msg.linear.x, vel_msg.linear.y) < mimumum_speed):
+    def setMinimumSpeed(self, vel_msg, minimum_speed):
+        if (self.euclidean_distance_xy(vel_msg.linear.x, vel_msg.linear.y) < minimum_speed):
             speed = self.euclidean_distance_xy(vel_msg.linear.x, vel_msg.linear.y)
             if speed == 0:
                 pass
@@ -243,27 +336,39 @@ class Position_Controller:
         return vel_msg
 
     def setMaximumSpeed(self, vel_msg, maximum_speed):
-        # Maximum speed limit
-        if (vel_msg.linear.x > maximum_speed):
-            vel_msg.linear.x = maximum_speed
-        if (vel_msg.linear.x < -maximum_speed):
-            vel_msg.linear.x = -maximum_speed
-        if (vel_msg.linear.y > maximum_speed):
-            vel_msg.linear.y = maximum_speed
-        if (vel_msg.linear.y < -maximum_speed):
-            vel_msg.linear.y = -maximum_speed
+        if (self.euclidean_distance_xy(vel_msg.linear.x, vel_msg.linear.y) > maximum_speed):
+            speed = self.euclidean_distance_xy(vel_msg.linear.x, vel_msg.linear.y)
+            if speed == 0:
+                pass
+            else:
+                vel_msg.linear.x = vel_msg.linear.x / speed * maximum_speed
+                vel_msg.linear.y = vel_msg.linear.y / speed * maximum_speed
         return vel_msg
 
     def manageState(self):
         self.rate = rospy.Rate(10)
         while not rospy.is_shutdown():
-            distance_to_goal = self.euclidean_distance(self.goal, self.pose)
-
             self.closest_table_leg = self.get_closest_table_leg()
-            required_table_angle = self.get_alignment_to_table_position(self.closest_table_leg)
+            self.goal = self.get_table_pose(self.closest_table_leg)
+            #self.goal = self.table_pose
+            #print(self.table_pose)
+            #print(self.pose)
+            #print(self.goal)
+            required_table_angle = self.goal.angular.z
+            distance_to_goal = self.euclidean_distance(self.goal, self.pose)
+            print("Goal distance: " + str(distance_to_goal))
 
-            self.alignment_error = self.pose.transform.rotation.z - required_table_angle
+            self.alignment_error = self.wrapped_angle(self.pose.angular.z, required_table_angle)
             self.grabbing_force = self.load_cell_pos_x - self.load_cell_neg_x
+
+            print("Goal distance: " + str(distance_to_goal))
+            print("Closest leg: " + str(self.closest_table_leg))
+            print("Alignment error: " + str(self.alignment_error))
+            print("Pose z: " + str(self.pose.angular.z))
+            print("Goal z: " + str(self.goal.angular.z))
+            print("Table z: " + str(self.table_pose.angular.z))
+
+
             # Conditions are in reverse order as the higher precision conditions will be
             # checked first and be false kicking the algorithm down to the next condition
 
@@ -272,38 +377,48 @@ class Position_Controller:
                 self.grabbing_timer_started = False
 
             # Special condition for startup
-            if (not self.startupCompleted):
-                if (self.actuator_state == ActuatorState.Down and
-                        abs(self.servo_state - self.SERVO_OPEN) < self.SERVO_TOLERANCE):
-                    self.startUpCompleted = True
-                else:
-                    self.state_startup()
-            elif (self.grabbing_force > self.TABLE_GRABBING_FORCE and
+            # if (not self.startUpCompleted):
+            #     print("State: Startup")
+            #     #print(abs(self.servo_state - self.SERVO_OPEN))
+            #     print("Servo: " + str(self.servo_state))
+            #     print("Actuator: " + str(self.actuator_state))
+            #     if (self.actuator_state == ActuatorState.Down and
+            #             abs(self.servo_state - self.SERVO_OPEN) < self.SERVO_TOLERANCE):
+            #         self.startUpCompleted = True
+            #     else:
+            #         self.state_startup()
+            if (self.grabbing_force > self.TABLE_GRABBING_FORCE and
                   self.actuator_state == ActuatorState.Up):
+                print("State: Move table")
                 self.state_move_table()
             elif (self.grabbing_force > self.TABLE_GRABBING_FORCE and
                   timer() - self.grabbing_timer_start < self.GRABBING_TIMEOUT):
+                print("State: Lift table")
                 self.state_lift_table()
             elif (distance_to_goal <= self.PRECISE_DISTANCE_TOLERANCE and
                   self.alignment_error < self.ALIGNMENT_ERROR_TOLERANCE):
+                print("State: Grab table")
                 self.state_grab_table()
             elif (self.alignment_error < self.ALIGNMENT_ERROR_TOLERANCE):
+                print("State: Moving to grabbing position")
                 self.state_move_to_grabbing_position()
-            elif (distance_to_goal <= self.distance_tolerance):
+            elif (distance_to_goal <= self.ROUGH_DISTANCE_TOLERANCE):
+                print("State: Aligning to goal")
                 self.state_align_to_goal()
-            elif (distance_to_goal > distance_tolerance):
+            elif (distance_to_goal > self.ROUGH_DISTANCE_TOLERANCE):
+                print("State: Moving to goal")
                 self.state_move_to_goal()
             self.rate.sleep()
 
     def state_startup(self):
-        self.servo_publisher.publish(0)
+        self.servo_publisher.publish(self.SERVO_OPEN)
         self.lifter_publisher.publish(ActuatorState.Down)
 
     def state_move_to_goal(self):
         self.goal = self.goal
 
-        error_x = self.pose.transform.translation.x - self.goal.transform.translation.x
-        error_y = self.pose.transform.translation.y - self.goal.transform.translation.y
+        error_x = self.pose.linear.x - self.goal.linear.x
+        error_y = self.pose.linear.y - self.goal.linear.y
 
         print("Pose error X: " + str(error_x) + " , Y: " + str(error_y) + " ")
         vel_msg = Twist()
@@ -317,7 +432,7 @@ class Position_Controller:
         # Angular velocity in the z-axis.
         vel_msg.angular.x = 0
         vel_msg.angular.y = 0
-        vel_msg.angular.z = 0
+        vel_msg.angular.z = self.alignment_error * self.ALIGNMENT_P
 
         # Minimum_speed
         self.setMinimumSpeed(vel_msg, 0.15)
@@ -341,10 +456,10 @@ class Position_Controller:
 
     def state_move_to_grabbing_position(self):
         self.goal = self.goal
-        table_pose = self.get_closest_table_pose(self.closest_table_leg)
+        table_pose = self.get_table_pose(self.closest_table_leg)
 
-        error_x = self.pose.transform.translation.x - table_pose.transform.x
-        error_y = self.pose.transform.translation.y - table_pose.transform.y
+        error_x = self.pose.linear.x - table_pose.linear.x
+        error_y = self.pose.linear.y - table_pose.linear.y
 
         print("Pose error X: " + str(error_x) + " , Y: " + str(error_y) + " ")
         vel_msg = Twist()
@@ -396,7 +511,6 @@ class Position_Controller:
 
             # Publishing our vel_msg
             self.velocity_publisher.publish(vel_msg)
-
 
 if __name__ == '__main__':
     try:
