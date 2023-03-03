@@ -25,7 +25,7 @@ def load_cell_pub():
     rate = rospy.Rate(10) # 10hz
 
     print("Connecting to ardunio")
-    arduino = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)
+    arduino = serial.Serial('/dev/ttyUSB1', 9600, timeout=1)
 
     while not rospy.is_shutdown():
         try:
