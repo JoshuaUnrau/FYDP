@@ -1,0 +1,8 @@
+prefix=/home/fydp/catkin_ws/devel
+
+Name: mecanum
+Description: Description of mecanum
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

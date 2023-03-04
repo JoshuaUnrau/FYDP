@@ -1,0 +1,52 @@
+
+import rospy
+from std_msgs.msg import String
+#!/usr/bin/env python
+
+from std_msgs.msg import Int32
+from geometry_msgs.msg import Twist
+
+import serial 
+
+import time
+print("Connecting to ardunio")
+arduino = serial.Serial('/dev/ttyUSB0', 57600, timeout=1)
+# try:
+#     arduino = serial.Serial('/dev/ttyUSB0', 57600, timeout=1)
+# except:
+#     try:
+#         arduino = serial.Serial('/dev/ttyUSB1', 57600, timeout=1)
+#     except:
+#         pass
+
+#arduino = serial.Serial('/dev/ttyUSB2', 57600, timeout=1)
+#Check usb devices:
+#sudo udevadm monitor -u
+#lsusb -t
+#ls -l /dev/ttyUSB
+#fuser -k /dev/ttyUSB9
+#10% overestimation
+print("Connected to ardunio")
+i = 0
+#2000 seems to be the best tare value
+while True:
+    try:
+        data = arduino.readline()
+        #print(int(data)/1.1)
+        
+        #Prepend text strings with s
+        if data[0] != 's':
+            try:
+                values = data.split(",")
+                load_cell_1 = int(values[0])
+                load_cell_2 = int(values[1])
+                load_cell_3 = int(values[2])
+                print(str(load_cell_1) + ", "+str(load_cell_2)+", "+str(load_cell_3))
+            except:
+                print("Values parse error")
+        else:
+            print(data)
+    except Exception as e:
+        time.sleep(1)
+        print("Exception with ardunio connection: "+ str(e))
+        #arduino.close() 
