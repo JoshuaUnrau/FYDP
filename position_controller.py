@@ -97,20 +97,24 @@ class Position_Controller:
         self.ROUGH_DISTANCE_TOLERANCE = 0.25
         self.PRECISE_DISTANCE_TOLERANCE = 0.05
         self.ALIGNMENT_ERROR_TOLERANCE = 0.1
-        self.TRANSLATION_P = 0.8 #0.35
-        self.ALIGNMENT_P = 0.1
+        self.TRANSLATION_P = 2 #0.35
+        self.ALIGNMENT_P = 4
         self.FORCE_P = 0.1
         self.error_x = 999
         self.error_y = 999
-        self.ROBOT_OFFSET_X = 0.0186
-        self.ROBOT_OFFSET_Y = -0.226
+        self.TABLE_OFFSET_X = 0
+        self.TABLE_OFFSET_Y = 0
+        self.ROBOT_OFFSET_X = -0.06
+        self.ROBOT_OFFSET_Y = 0.06
+        self.GRIPPER_OFFSET_X = 0.02
+        self.GRIPPER_OFFSET_Y = -0.226
         self.ROBOT_OFFSET_AZ = 0 #-2.42049522
 
         #P_CONTROLLER SPEED CONSTAINTS
-        self.MINIMUM_SPEED = 0.2
-        self.MAXIMUM_SPEED = 0.8
-        self.MINIMUM_ANGULAR_VEL = 0.05
-        self.MAXIMUM_ANGULAR_VEL = 0.5
+        self.MINIMUM_SPEED = 0.4
+        self.MAXIMUM_SPEED = 1 #1.5
+        self.MINIMUM_ANGULAR_VEL = 0.2
+        self.MAXIMUM_ANGULAR_VEL = 1
 
         # Array holding all of the positions that the robot should go to for grabbing
         self.table_grab_positions = []
@@ -122,9 +126,10 @@ class Position_Controller:
         self.leaderFollowerState = LeaderFollowerState.Unknown
         self.actuator_state = ActuatorState.Stop
         self.servo_state = 25
+        self.grabbing_timer_start = 0
         self.grabbing_timer_started = False
         self.robotState = RobotState.Init
-        self.movingToGrabbingPos = False
+        self.in_grabbing_position = False
 
         # Publisher which will publish to the topic '/turtle1/cmd_vel'.
         self.velocity_publisher = rospy.Publisher('cmd_vel', Twist, queue_size=10)
@@ -300,7 +305,7 @@ class Position_Controller:
         #Modify grab positions by table pose
         i = 0
         for twist in self.table_grab_positions:
-            self.table_grab_positions[i].angular.z = (twist.angular.z - self.table_pose.angular.z) % (2*math.pi)
+            self.table_grab_positions[i].angular.z = (twist.angular.z + self.table_pose.angular.z) % (2*math.pi)
             i += 1
 
         self.TABLE_POSE_SET = True
@@ -308,12 +313,19 @@ class Position_Controller:
     def update_pose(self, data):
         self.pose.linear.x = data.transform.translation.x
         self.pose.linear.y = data.transform.translation.y
-        _, _, self.pose.angular.z = euler_from_quaternion(data.transform.rotation.x,
+        _, _, angle = euler_from_quaternion(data.transform.rotation.x,
                                                           data.transform.rotation.y,
                                                           data.transform.rotation.z,
                                                           data.transform.rotation.w)
+        #This function (transform_rotated_point strips off rotation info)
+        self.pose = self.transform_rotated_point(self.pose,
+                                                 self.ROBOT_OFFSET_X,
+                                                 self.ROBOT_OFFSET_Y,
+                                                 angle)
+        self.pose.angular.z = angle
         self.pose.angular.z += self.ROBOT_OFFSET_AZ
         self.pose.angular.z = (self.pose.angular.z + 2 * math.pi) % (2*math.pi)
+
 
     def euclidean_distance(self, pose1, pose2):
         return sqrt(pow((pose1.linear.x - pose2.linear.x), 2) +
@@ -371,60 +383,59 @@ class Position_Controller:
 
     def getGripperTwist(self):
         gripper = self.transform_rotated_point(self.pose,
-                                               self.ROBOT_OFFSET_X,
-                                               self.ROBOT_OFFSET_Y,
+                                               self.GRIPPER_OFFSET_X,
+                                               self.GRIPPER_OFFSET_Y,
                                                self.pose.angular.z)
         return gripper
 
-    def debug(self):
-        print("Pose X: " + str(self.pose.linear.x) + " , Y: " + str(self.pose.linear.y)
-              + ", AZ: " + str(self.pose.angular.z))
-        print("Goal X: " + str(self.goal.linear.x) + " , Y: " + str(self.goal.linear.y)
-              + ", AZ: " + str(self.goal.angular.z))
-        print("Table X: " + str(self.table_pose.linear.x) + " , Y: " + str(self.table_pose.linear.y)
-              + ", AZ: " + str(self.table_pose.angular.z))
-        print("Pos (4) X: " + str(self.table_grab_positions[4].linear.x) + " , Y: " + str(
-            self.table_grab_positions[4].linear.y)
-              + ", AZ: " + str(self.table_grab_positions[4].angular.z))
-        print("Pos (5) X: " + str(self.table_grab_positions[5].linear.x) + " , Y: " + str(
-            self.table_grab_positions[5].linear.y)
-              + ", AZ: " + str(self.table_grab_positions[5].angular.z))
-        print("ERROR Pos (4) X: " + str(self.table_grab_positions[4].linear.x - self.gripper_position.linear.x)
-              + " , Y: " + str(self.table_grab_positions[4].linear.y - self.gripper_position.linear.y)
-              + ", AZ: " + str(self.table_grab_positions[4].angular.z))
-        print("ERRPR Pos (5) X: " + str(self.table_grab_positions[5].linear.x - self.gripper_position.linear.x)
-              + " , Y: " + str(self.table_grab_positions[5].linear.y - self.gripper_position.linear.y)
-              + ", AZ: " + str(self.table_grab_positions[5].angular.z))
-        time.sleep(1)
+    def debug(self, All):
+        print("Goal distance: " + str(distance_to_goal))
+        print("Closest leg: " + str(self.closest_table_leg))
+        print("Pose error X: " + str(self.error_x) + " , Y: " + str(self.error_y)
+              + ", AZ: " + str(self.alignment_error))
+        if(All):
+            print("Pose X: " + str(self.pose.linear.x) + " , Y: " + str(self.pose.linear.y)
+                  + ", AZ: " + str(self.pose.angular.z))
+            print("Goal X: " + str(self.goal.linear.x) + " , Y: " + str(self.goal.linear.y)
+                  + ", AZ: " + str(self.goal.angular.z))
+            print("Table X: " + str(self.table_pose.linear.x) + " , Y: " + str(self.table_pose.linear.y)
+                  + ", AZ: " + str(self.table_pose.angular.z))
+            print("Pos (4) X: " + str(self.table_grab_positions[4].linear.x) + " , Y: " + str(
+                self.table_grab_positions[4].linear.y)
+                  + ", AZ: " + str(self.table_grab_positions[4].angular.z))
+            print("Pos (5) X: " + str(self.table_grab_positions[5].linear.x) + " , Y: " + str(
+                self.table_grab_positions[5].linear.y)
+                  + ", AZ: " + str(self.table_grab_positions[5].angular.z))
+            print("ERROR Pos (4) X: " + str(self.table_grab_positions[4].linear.x - self.gripper_position.linear.x)
+                  + " , Y: " + str(self.table_grab_positions[4].linear.y - self.gripper_position.linear.y)
+                  + ", AZ: " + str(self.table_grab_positions[4].angular.z))
+            print("ERRPR Pos (5) X: " + str(self.table_grab_positions[5].linear.x - self.gripper_position.linear.x)
+                  + " , Y: " + str(self.table_grab_positions[5].linear.y - self.gripper_position.linear.y)
+                  + ", AZ: " + str(self.table_grab_positions[5].angular.z))
+            #time.sleep(1)
+
     def manageState(self):
-        self.rate = rospy.Rate(10)
+        self.rate = rospy.Rate(50)
         while not rospy.is_shutdown():
             self.gripper_position = self.getGripperTwist()
             self.closest_table_leg = self.get_closest_table_leg(self.pose)
             self.goal = self.get_table_pose(self.closest_table_leg)
 
-            # vel_msg = Twist()
-            # vel_msg.linear.x = 0
-            # vel_msg.linear.y = 0
-            # vel_msg.linear.z = 0
-            #
-            # # Angular velocity in the z-axis.
-            # vel_msg.angular.x = 0
-            # vel_msg.angular.y = 0
-            # vel_msg.angular.z = 0
-            # self.velocity_publisher.publish(vel_msg)
-
             #Actually move to table leg
-            if(self.movingToGrabbingPos):
-                self.error_x = self.pose.linear.x - self.goal.linear.x
-                self.error_y = self.pose.linear.y - self.goal.linear.y
+            if(self.robotState == RobotState.TableGrabPosition):
+                self.error_x = (self.goal.linear.x - self.gripper_position.linear.x)
+                self.error_y = (self.goal.linear.y - self.gripper_position.linear.y)
+                self.in_grabbing_position = self.euclidean_distance_xy(self.error_x, self.error_y) < self.PRECISE_DISTANCE_TOLERANCE
             else: #Move to offset position from table leg
-                self.error_x = self.pose.linear.x - self.goal.linear.x
-                self.error_y = self.pose.linear.y - self.goal.linear.y
-            #self.goal = self.table_pose
-            #print(self.table_pose)
-            #print(self.pose)
-            #print(self.goal)
+                self.error_x = (self.goal.linear.x - self.pose.linear.x)
+                self.error_y = (self.goal.linear.y - self.pose.linear.y)
+
+            #Rotated to local robot frame error to table
+            forward_error = Twist()
+            forward_error.linear.x = -self.error_x
+            forward_error.linear.y = self.error_y
+            forward_error = self.transform_rotated_point(forward_error,0,0,self.pose.angular.z)
+
             required_table_angle = self.goal.angular.z
             distance_to_goal = self.euclidean_distance(self.goal, self.pose)
 
@@ -435,6 +446,14 @@ class Position_Controller:
             print("Closest leg: " + str(self.closest_table_leg))
             print("Pose error X: " + str(self.error_x) + " , Y: " + str(self.error_y)
                   + ", AZ: " + str(self.alignment_error))
+            print("Pose X: " + str(self.pose.linear.x) + " , Y: " + str(self.pose.linear.y)
+                  + ", AZ: " + str(self.pose.angular.z))
+            print("Table X: " + str(self.table_pose.linear.x) + " , Y: " + str(self.table_pose.linear.y)
+                  + ", AZ: " + str(self.table_pose.angular.z))
+            print("Goal X: " + str(self.goal.linear.x) + " , Y: " + str(self.goal.linear.y)
+                  + ", AZ: " + str(self.goal.angular.z))
+            print("Forward error: " + str(forward_error.linear.x) + " , Sideways Error: " + str(forward_error.linear.y))
+            #self.debug(False)
             # Conditions are in reverse order as the higher precision conditions will be
             # checked first and be false kicking the algorithm down to the next condition
 
@@ -445,7 +464,6 @@ class Position_Controller:
             #Robot occuluded
             if(self.pose.linear.x == 0 and self.pose.linear.y == 0):
                 print("Occluded")
-
 
             # Special condition for startup
             # if (not self.startUpCompleted):
@@ -464,21 +482,26 @@ class Position_Controller:
             #     print("State: Move table")
             #     self.robotState = RobotState.MoveTable
             #     self.state_move_table()
-            # elif (self.grabbing_force > self.TABLE_GRABBING_FORCE and
-            #       timer() - self.grabbing_timer_start < self.GRABBING_TIMEOUT):
+            # elif (self.grabbing_force > self.TABLE_GRABBING_FORCE):
             #     print("State: Lift table")
             #     self.state_lift_table()
-            elif (distance_to_goal <= self.PRECISE_DISTANCE_TOLERANCE and
-                  self.alignment_error < self.ALIGNMENT_ERROR_TOLERANCE):
+            #     self.dont_move()
+            elif (self.in_grabbing_position and
+                  abs(self.alignment_error) < self.ALIGNMENT_ERROR_TOLERANCE and
+                  (timer() - self.grabbing_timer_start < self.GRABBING_TIMEOUT
+                   or not self.grabbing_timer_started)):
                 print("State: Grab table")
                 self.robotState = RobotState.GrabTable
-                #self.state_grab_table()
-            elif self.robotState == RobotState.PreciseMove or self.movingToGrabbingPos:
-                print("State: Move to table grabbing position")
-                self.movingToGrabbingPos = True
+                self.state_grab_table()
+                self.dont_move()
+            #Previous state was preciseMove or you are in process of moving to grabbing position.
+            elif self.robotState == RobotState.PreciseMove or \
+                    self.robotState == RobotState.TableGrabPosition and\
+                    abs(self.alignment_error) < self.ALIGNMENT_ERROR_TOLERANCE:
+                print("State: Move to actual table grabbing position")
                 self.robotState = RobotState.TableGrabPosition
-                # self.state_grab_table()
-            elif (self.alignment_error < self.ALIGNMENT_ERROR_TOLERANCE
+                self.state_move_to_grabbing_position()
+            elif (abs(self.alignment_error) < self.ALIGNMENT_ERROR_TOLERANCE
                 and distance_to_goal <= self.ROUGH_DISTANCE_TOLERANCE):
                 print("State: Precise move to pre-grabbing position")
                 self.robotState = RobotState.PreciseMove
@@ -511,7 +534,7 @@ class Position_Controller:
         # Angular velocity in the z-axis.
         vel_msg.angular.x = 0
         vel_msg.angular.y = 0
-        vel_msg.angular.z = 0 #self.alignment_error * self.ALIGNMENT_P
+        vel_msg.angular.z = self.alignment_error * self.ALIGNMENT_P
 
         # Minimum_speed
         self.setMinimumSpeed(vel_msg, self.MINIMUM_SPEED)
@@ -531,12 +554,25 @@ class Position_Controller:
         vel_msg.angular.x = 0
         vel_msg.angular.y = 0
         vel_msg.angular.z = self.alignment_error * self.ALIGNMENT_P
+        #Get the sign of the angle
+        sign_ang = vel_msg.angular.z/abs(vel_msg.angular.z)
+        if abs(vel_msg.angular.z) > self.MAXIMUM_ANGULAR_VEL:
+            vel_msg.angular.z = self.MAXIMUM_ANGULAR_VEL*sign_ang
+        if abs(vel_msg.angular.z) < self.MINIMUM_ANGULAR_VEL:
+            vel_msg.angular.z = self.MINIMUM_ANGULAR_VEL*sign_ang
 
-        if vel_msg.angular.z > self.MAXIMUM_ANGULAR_VEL:
-            vel_msg.angular.z = self.MAXIMUM_ANGULAR_VEL
-        if vel_msg.angular.z < self.MINIMUM_ANGULAR_VEL:
-            vel_msg.angular.z = self.MINIMUM_ANGULAR_VEL
+        self.velocity_publisher.publish(vel_msg)
 
+    def dont_move(self):
+        vel_msg = Twist()
+        vel_msg.linear.x = 0
+        vel_msg.linear.y = 0
+        vel_msg.linear.z = 0
+
+        # Angular velocity in the z-axis.
+        vel_msg.angular.x = 0
+        vel_msg.angular.y = 0
+        vel_msg.angular.z = 0
         self.velocity_publisher.publish(vel_msg)
 
     def state_move_to_grabbing_position(self):
@@ -569,7 +605,7 @@ class Position_Controller:
         self.servo_publisher.publish(self.SERVO_CLOSED)
 
     def state_lift_table(self):
-        self.lifter_publisher(ActuatorState.Up)
+        self.lifter_publisher.publish(ActuatorState.Up)
 
     def state_move_table(self):
         if self.leaderFollowerState == LeaderFollowerState.Unknown:
