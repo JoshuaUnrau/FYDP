@@ -1,7 +1,0 @@
-<launch>
-    <include file="$(find vicon_bridge)/launch/vicon.launch"/>
-    <node name="pwm" pkg="pwm" type="pwm.py" />
-    <node name="position_controller" pkg="mecanum" type="position_controller.py" />
-    <node name="mecanum" pkg="mecanum" type="mecanum.py" />
-    <node name="load_cells" pkg="mecanum" type="ardunioInterface.py" />
-</launch>

@@ -1,3 +1,0 @@
-<launch>
-    <node name="pwm" pkg="pwm" type="pwm.py" />
-</launch>
