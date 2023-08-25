@@ -1,4 +1,4 @@
-prefix=/home/fydp/catkin_ws/devel
+prefix=/home/drone/drone_code/catkin_ws/devel
 
 Name: mecanum
 Description: Description of mecanum

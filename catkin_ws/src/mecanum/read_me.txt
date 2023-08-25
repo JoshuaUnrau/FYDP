@@ -1,7 +1,17 @@
-source devel/setup.bash
+cd ~/drone_code/catkin_ws/
 
+source devel/setup.bash
 catkin_make
 
+cd src/mecanum/launch/
+roslaunch everythingExceptPositionController.launch
+
+cd src/pwm/launch/
+roslaunch pwm.launch
+
+rosrun mecanum position_controller.py
+cd src/pwm/
+rosrun pwm pwm.py
 ros command to teleop robot:
 
 rosrun teleop_twist_keyboard teleop_twist_keyboard.py

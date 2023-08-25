@@ -67,14 +67,14 @@ set(pwm_CONFIG_INCLUDED TRUE)
 
 # set variables for source/devel/install prefixes
 if("FALSE" STREQUAL "TRUE")
-  set(pwm_SOURCE_PREFIX /home/fydp/catkin_ws/src/pwm)
-  set(pwm_DEVEL_PREFIX /home/fydp/catkin_ws/devel)
+  set(pwm_SOURCE_PREFIX /home/drone/drone_code/catkin_ws/src/pwm)
+  set(pwm_DEVEL_PREFIX /home/drone/drone_code/catkin_ws/devel)
   set(pwm_INSTALL_PREFIX "")
   set(pwm_PREFIX ${pwm_DEVEL_PREFIX})
 else()
   set(pwm_SOURCE_PREFIX "")
   set(pwm_DEVEL_PREFIX "")
-  set(pwm_INSTALL_PREFIX /home/fydp/catkin_ws/install)
+  set(pwm_INSTALL_PREFIX /home/drone/drone_code/catkin_ws/install)
   set(pwm_PREFIX ${pwm_INSTALL_PREFIX})
 endif()
 
@@ -154,7 +154,7 @@ foreach(library ${libraries})
     set(lib_path "")
     set(lib "${library}-NOTFOUND")
     # since the path where the library is found is returned we have to iterate over the paths manually
-    foreach(path /home/fydp/catkin_ws/install/lib;/opt/ros/melodic/lib)
+    foreach(path /home/drone/drone_code/catkin_ws/install/lib;/opt/ros/noetic/lib)
       find_library(lib ${library}
         PATHS ${path}
         NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
@@ -211,7 +211,7 @@ foreach(depend ${depends})
   _unpack_libraries_with_build_configuration(pwm_LIBRARIES ${pwm_LIBRARIES})
 
   _list_append_unique(pwm_LIBRARY_DIRS ${${pwm_dep}_LIBRARY_DIRS})
-  list(APPEND pwm_EXPORTED_TARGETS ${${pwm_dep}_EXPORTED_TARGETS})
+  _list_append_deduplicate(pwm_EXPORTED_TARGETS ${${pwm_dep}_EXPORTED_TARGETS})
 endforeach()
 
 set(pkg_cfg_extras "")

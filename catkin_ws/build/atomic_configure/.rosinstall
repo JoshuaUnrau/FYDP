@@ -1,2 +1,2 @@
 - setup-file:
-    local-name: /home/fydp/catkin_ws/devel/setup.sh
+    local-name: /home/drone/drone_code/catkin_ws/devel/setup.sh

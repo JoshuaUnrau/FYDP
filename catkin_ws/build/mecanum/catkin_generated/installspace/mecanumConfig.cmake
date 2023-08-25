@@ -67,14 +67,14 @@ set(mecanum_CONFIG_INCLUDED TRUE)
 
 # set variables for source/devel/install prefixes
 if("FALSE" STREQUAL "TRUE")
-  set(mecanum_SOURCE_PREFIX /home/fydp/catkin_ws/src/mecanum)
-  set(mecanum_DEVEL_PREFIX /home/fydp/catkin_ws/devel)
+  set(mecanum_SOURCE_PREFIX /home/drone/drone_code/catkin_ws/src/mecanum)
+  set(mecanum_DEVEL_PREFIX /home/drone/drone_code/catkin_ws/devel)
   set(mecanum_INSTALL_PREFIX "")
   set(mecanum_PREFIX ${mecanum_DEVEL_PREFIX})
 else()
   set(mecanum_SOURCE_PREFIX "")
   set(mecanum_DEVEL_PREFIX "")
-  set(mecanum_INSTALL_PREFIX /home/fydp/catkin_ws/install)
+  set(mecanum_INSTALL_PREFIX /home/drone/drone_code/catkin_ws/install)
   set(mecanum_PREFIX ${mecanum_INSTALL_PREFIX})
 endif()
 
@@ -154,7 +154,7 @@ foreach(library ${libraries})
     set(lib_path "")
     set(lib "${library}-NOTFOUND")
     # since the path where the library is found is returned we have to iterate over the paths manually
-    foreach(path /home/fydp/catkin_ws/install/lib;/opt/ros/melodic/lib)
+    foreach(path /home/drone/drone_code/catkin_ws/install/lib;/opt/ros/noetic/lib)
       find_library(lib ${library}
         PATHS ${path}
         NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
@@ -211,7 +211,7 @@ foreach(depend ${depends})
   _unpack_libraries_with_build_configuration(mecanum_LIBRARIES ${mecanum_LIBRARIES})
 
   _list_append_unique(mecanum_LIBRARY_DIRS ${${mecanum_dep}_LIBRARY_DIRS})
-  list(APPEND mecanum_EXPORTED_TARGETS ${${mecanum_dep}_EXPORTED_TARGETS})
+  _list_append_deduplicate(mecanum_EXPORTED_TARGETS ${${mecanum_dep}_EXPORTED_TARGETS})
 endforeach()
 
 set(pkg_cfg_extras "")

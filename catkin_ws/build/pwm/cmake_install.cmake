@@ -1,8 +1,8 @@
-# Install script for directory: /home/fydp/catkin_ws/src/pwm
+# Install script for directory: /home/drone/drone_code/catkin_ws/src/pwm
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "/home/fydp/catkin_ws/install")
+  set(CMAKE_INSTALL_PREFIX "/home/drone/drone_code/catkin_ws/install")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -38,17 +38,17 @@ if(NOT DEFINED CMAKE_CROSSCOMPILING)
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/fydp/catkin_ws/build/pwm/catkin_generated/installspace/pwm.pc")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/drone/drone_code/catkin_ws/build/pwm/catkin_generated/installspace/pwm.pc")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/pwm/cmake" TYPE FILE FILES
-    "/home/fydp/catkin_ws/build/pwm/catkin_generated/installspace/pwmConfig.cmake"
-    "/home/fydp/catkin_ws/build/pwm/catkin_generated/installspace/pwmConfig-version.cmake"
+    "/home/drone/drone_code/catkin_ws/build/pwm/catkin_generated/installspace/pwmConfig.cmake"
+    "/home/drone/drone_code/catkin_ws/build/pwm/catkin_generated/installspace/pwmConfig-version.cmake"
     )
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/pwm" TYPE FILE FILES "/home/fydp/catkin_ws/src/pwm/package.xml")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/pwm" TYPE FILE FILES "/home/drone/drone_code/catkin_ws/src/pwm/package.xml")
 endif()
 

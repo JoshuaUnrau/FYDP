@@ -1,4 +1,4 @@
-prefix=/home/fydp/catkin_ws/install
+prefix=/home/drone/drone_code/catkin_ws/install
 
 Name: mecanum
 Description: Description of mecanum
